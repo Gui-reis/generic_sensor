@@ -3,109 +3,11 @@
 #include <WiFi.h>
 
 /*
- * A página é mantida em PROGMEM para não ocupar desnecessariamente a RAM do
- * microcontrolador. Ela usa apenas HTML, CSS e JavaScript locais, portanto o
- * portal funciona mesmo que o ESP32 ainda não possua acesso à Internet.
+ * LittleFS mantém os arquivos do portal em uma partição própria da flash. Isso
+ * separa a interface web do código C++, facilita editar HTML/CSS/JavaScript e
+ * ainda preserva o funcionamento totalmente local, sem depender da Internet.
  */
-namespace {
-const char kConfigurationPage[] PROGMEM = R"HTML(
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Configurar Wi-Fi do sensor</title>
-  <style>
-    :root { color-scheme: light; font-family: system-ui, sans-serif; }
-    body { background: #f2f5f7; margin: 0; padding: 24px; color: #1f2933; }
-    main { background: white; border-radius: 14px; box-shadow: 0 8px 30px #0002;
-           margin: 8vh auto; max-width: 480px; padding: 28px; }
-    h1 { font-size: 1.55rem; margin-top: 0; }
-    p { color: #52606d; line-height: 1.5; }
-    label { display: block; font-weight: 650; margin: 18px 0 7px; }
-    select, input, button { box-sizing: border-box; border-radius: 8px;
-                            font: inherit; padding: 12px; width: 100%; }
-    select, input { background: white; border: 1px solid #bcccdc; }
-    button { background: #1261a0; border: 0; color: white; cursor: pointer;
-             font-weight: 700; margin-top: 22px; }
-    button:disabled { background: #9fb3c8; cursor: wait; }
-    #status { font-size: .92rem; min-height: 1.4em; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>Configurar Wi-Fi do sensor</h1>
-    <p>Escolha uma rede encontrada pelo ESP32. A rede será lembrada nas próximas inicializações.</p>
-    <form action="/save" method="POST">
-      <label for="ssid">Rede Wi-Fi</label>
-      <select id="ssid" name="ssid" required disabled>
-        <option value="">Procurando redes...</option>
-      </select>
-      <div id="status">O scan pode levar alguns segundos.</div>
-
-      <label for="password">Senha</label>
-      <input id="password" name="password" type="password" maxlength="63"
-             autocomplete="current-password" placeholder="Deixe vazio para rede aberta">
-
-      <button id="save" type="submit" disabled>Salvar e conectar</button>
-    </form>
-  </main>
-  <script>
-    const select = document.querySelector('#ssid');
-    const status = document.querySelector('#status');
-    const button = document.querySelector('#save');
-
-    /*
-     * O endpoint devolve um JSON pequeno gerado pelo próprio ESP32. Usar
-     * textContent e elementos DOM, em vez de innerHTML, impede que nomes de rede
-     * contendo caracteres especiais sejam interpretados como código HTML.
-     */
-    fetch('/networks')
-      .then(response => {
-        if (!response.ok) throw new Error('Falha no scan');
-        return response.json();
-      })
-      .then(networks => {
-        select.textContent = '';
-        if (!networks.length) {
-          const option = document.createElement('option');
-          option.textContent = 'Nenhuma rede encontrada';
-          option.value = '';
-          select.appendChild(option);
-          status.textContent = 'Aproxime o sensor do roteador e recarregue a página.';
-          return;
-        }
-
-        networks.forEach(network => {
-          const option = document.createElement('option');
-          option.value = network.ssid;
-          option.textContent = `${network.ssid} (${network.rssi} dBm)${network.open ? ' — aberta' : ''}`;
-          select.appendChild(option);
-        });
-        select.disabled = false;
-        button.disabled = false;
-        status.textContent = `${networks.length} rede(s) encontrada(s).`;
-      })
-      .catch(() => {
-        status.textContent = 'Não foi possível procurar redes. Recarregue a página para tentar novamente.';
-      });
-  </script>
-</body>
-</html>
-)HTML";
-
-const char kSavedPage[] PROGMEM = R"HTML(
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Configuração salva</title></head>
-<body style="font-family:system-ui;text-align:center;padding:10vh 20px">
-  <h1>Credenciais salvas!</h1>
-  <p>O sensor será reiniciado e tentará conectar à rede selecionada.</p>
-</body>
-</html>
-)HTML";
-} /* namespace */
+#include <LittleFS.h>
 
 constexpr uint8_t NetworkManager::kMaxKnownNetworks;
 constexpr uint32_t NetworkManager::kConnectionTimeoutMs;
@@ -116,11 +18,14 @@ const char *const NetworkManager::kAccessPointSsid = "Sensor-IoT-Setup";
 const char *const NetworkManager::kAccessPointPassword = "12345678";
 
 NetworkManager::NetworkManager()
-    : server_(80), credentialCount_(0), portalActive_(false) {
+    : server_(80), credentialCount_(0), portalActive_(false),
+      fileSystemMounted_(false) {
   /*
    * O servidor HTTP é construído na porta 80, que é a porta padrão acessada
    * pelos navegadores. A lista começa vazia e o portal começa desativado; esses
-   * valores serão atualizados durante begin() conforme o estado da conexão.
+   * valores serão atualizados durante begin() conforme o estado da conexão. O
+   * indicador do LittleFS também começa falso e somente muda depois que a
+   * partição de arquivos tiver sido montada com sucesso.
    */
 }
 
@@ -136,6 +41,25 @@ void NetworkManager::begin() {
    */
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
+
+  /*
+   * Monta a partição do LittleFS antes de qualquer tentativa de abrir o portal.
+   * O parâmetro true permite formatar a partição somente quando a montagem
+   * inicial falhar, o que também prepara automaticamente uma flash ainda vazia.
+   * Os arquivos de data/ continuam precisando ser enviados pelo target uploadfs.
+   */
+  fileSystemMounted_ = LittleFS.begin(true);
+
+  if (fileSystemMounted_) {
+    Serial.println("LittleFS montado com sucesso.");
+  } else {
+    /*
+     * Uma falha não impede o sensor de tentar conectar ao Wi-Fi conhecido. Se o
+     * portal for necessário, seus endpoints responderão com uma mensagem de
+     * erro clara em vez de tentar acessar um sistema de arquivos indisponível.
+     */
+    Serial.println("Não foi possível montar o LittleFS.");
+  }
 
   /*
    * Primeiro recupera as redes já cadastradas. Em seguida tenta conectar a cada
@@ -491,11 +415,19 @@ void NetworkManager::startConfigurationPortal() {
 void NetworkManager::configureWebServerRoutes() {
   /*
    * Cada lambda captura this para encaminhar a requisição ao método da
-   * instância. A raiz entrega a página, /networks produz o scan e /save recebe
+   * instância. Além da página principal, CSS e JavaScript possuem URLs próprias
+   * e são lidos diretamente do LittleFS. /networks produz o scan e /save recebe
    * o formulário. Qualquer outro endereço é tratado como uma tentativa de
    * acessar o captive portal.
    */
   server_.on("/", HTTP_GET, [this]() { handleRoot(); });
+  server_.on("/styles.css", HTTP_GET, [this]() {
+    sendFileFromLittleFs("/styles.css", "text/css; charset=utf-8", true);
+  });
+  server_.on("/script.js", HTTP_GET, [this]() {
+    sendFileFromLittleFs("/script.js", "application/javascript; charset=utf-8",
+                         true);
+  });
   server_.on("/networks", HTTP_GET, [this]() { handleNetworkScan(); });
   server_.on("/save", HTTP_POST, [this]() { handleSave(); });
   server_.onNotFound([this]() { handleNotFound(); });
@@ -505,10 +437,11 @@ void NetworkManager::configureWebServerRoutes() {
 
 void NetworkManager::handleRoot() {
   /*
-   * send_P lê o HTML diretamente da flash (PROGMEM), evitando criar uma cópia
-   * completa da página na RAM antes de enviá-la ao navegador.
+   * A página principal agora é um arquivo comum na partição LittleFS. O helper
+   * abre o arquivo e entrega seu conteúdo em fluxo, sem montar uma grande String
+   * em RAM e sem manter o HTML misturado ao código C++.
    */
-  server_.send_P(200, "text/html; charset=utf-8", kConfigurationPage);
+  sendFileFromLittleFs("/index.html", "text/html; charset=utf-8", false);
 }
 
 ////////////////////////////////
@@ -632,9 +565,12 @@ void NetworkManager::handleSave() {
   /* Persiste a rede somente depois que todas as validações foram aprovadas. */
   saveCredential(ssid, password);
 
-  /* Confirma a operação ao navegador antes de reinicializar o microcontrolador.
+  /*
+   * Confirma a operação com uma segunda página armazenada no LittleFS. Se o
+   * arquivo tiver sido removido por engano, o helper envia HTTP 500 e o restart
+   * ainda acontece, pois a credencial já foi validada e salva corretamente.
    */
-  server_.send_P(200, "text/html; charset=utf-8", kSavedPage);
+  sendFileFromLittleFs("/saved.html", "text/html; charset=utf-8", false);
 
   /*
    * A pequena espera permite que o pacote HTTP deixe o ESP32 antes do restart.
@@ -642,6 +578,64 @@ void NetworkManager::handleSave() {
    */
   delay(1500);
   ESP.restart();
+}
+
+////////////////////////////////
+
+bool NetworkManager::sendFileFromLittleFs(const char *path,
+                                          const char *contentType,
+                                          bool allowBrowserCache) {
+  /*
+   * Nunca tenta abrir um arquivo quando begin() não conseguiu montar a partição.
+   * A resposta explícita facilita diagnosticar pelo navegador e pelo monitor
+   * serial que o problema está no LittleFS, e não na rede ou no WebServer.
+   */
+  if (!fileSystemMounted_) {
+    Serial.println("LittleFS indisponível ao atender uma requisição HTTP.");
+    server_.send(500, "text/plain; charset=utf-8",
+                 "LittleFS indisponível. Regrave o firmware e os arquivos do portal.");
+    return false;
+  }
+
+  /*
+   * Abre somente caminhos definidos pelo próprio firmware. Não usamos a URL da
+   * requisição como caminho, impedindo que o navegador tente acessar arquivos
+   * arbitrários da partição.
+   */
+  File file = LittleFS.open(path, "r");
+
+  if (!file || file.isDirectory()) {
+    /*
+     * Um arquivo ausente normalmente significa que uploadfs não foi executado
+     * depois da compilação. Registra o caminho para tornar o diagnóstico direto
+     * mesmo quando o usuário enxerga apenas uma página de erro no navegador.
+     */
+    Serial.print("Arquivo não encontrado no LittleFS: ");
+    Serial.println(path);
+    file.close();
+    server_.send(500, "text/plain; charset=utf-8",
+                 "Arquivo do portal não encontrado. Execute o upload do LittleFS.");
+    return false;
+  }
+
+  /*
+   * CSS e JavaScript podem ser reutilizados pelo cache do navegador durante a
+   * sessão. As páginas HTML não são armazenadas para que uma atualização do
+   * portal apareça imediatamente depois de recarregar o endereço.
+   */
+  if (allowBrowserCache) {
+    server_.sendHeader("Cache-Control", "public, max-age=3600");
+  } else {
+    server_.sendHeader("Cache-Control", "no-store");
+  }
+
+  /*
+   * streamFile() envia o arquivo em blocos e evita copiá-lo por inteiro para a
+   * RAM. O File permanece aberto durante a transmissão e é fechado logo depois.
+   */
+  server_.streamFile(file, contentType);
+  file.close();
+  return true;
 }
 
 ////////////////////////////////

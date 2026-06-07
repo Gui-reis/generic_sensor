@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configurar Wi-Fi do sensor</title>
+
+  <!--
+    O visual e o comportamento foram separados do HTML para que cada parte do
+    portal possa ser alterada diretamente em data/ e enviada para o LittleFS sem
+    precisar manter grandes strings dentro do código C++.
+  -->
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/script.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Configurar Wi-Fi do sensor</h1>
+    <p>Escolha uma rede encontrada pelo ESP32. A rede será lembrada nas próximas inicializações.</p>
+
+    <!--
+      O formulário continua usando uma requisição POST comum. Assim ele funciona
+      sem bibliotecas externas e sem depender de acesso à Internet no captive
+      portal criado pelo ESP32.
+    -->
+    <form action="/save" method="POST">
+      <label for="ssid">Rede Wi-Fi</label>
+      <select id="ssid" name="ssid" required disabled>
+        <option value="">Procurando redes...</option>
+      </select>
+      <div id="status">O scan pode levar alguns segundos.</div>
+
+      <label for="password">Senha</label>
+      <input id="password" name="password" type="password" maxlength="63"
+             autocomplete="current-password" placeholder="Deixe vazio para rede aberta">
+
+      <button id="save" type="submit" disabled>Salvar e conectar</button>
+    </form>
+  </main>
+</body>
+</html>

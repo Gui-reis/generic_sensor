@@ -85,6 +85,7 @@ private:
   Credential credentials_[kMaxKnownNetworks];
   uint8_t credentialCount_;
   bool portalActive_;
+  bool fileSystemMounted_;
 
   /** Carrega e compacta as credenciais salvas na memória não volátil. */
   void loadCredentials();
@@ -121,7 +122,7 @@ private:
 
   ////////////////////////////////
 
-  /** Envia ao navegador a página HTML de configuração gravada em PROGMEM. */
+  /** Envia ao navegador a página principal armazenada no LittleFS. */
   void handleRoot();
 
   ////////////////////////////////
@@ -133,6 +134,15 @@ private:
 
   /** Valida o formulário, salva as credenciais e reinicia o ESP32. */
   void handleSave();
+
+  ////////////////////////////////
+
+  /**
+   * Envia um arquivo do LittleFS em fluxo, com tipo e política de cache dados.
+   * Retorna false quando a partição ou o caminho não estão disponíveis.
+   */
+  bool sendFileFromLittleFs(const char *path, const char *contentType,
+                            bool allowBrowserCache);
 
   ////////////////////////////////
 

@@ -1,0 +1,81 @@
+/*
+ * Toda a interface usa recursos nativos do navegador. Não existem fontes,
+ * ícones ou folhas de estilo externas, pois o portal deve funcionar antes de o
+ * ESP32 conseguir acesso à Internet.
+ */
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  background: #f2f5f7;
+  color: #1f2933;
+  margin: 0;
+  padding: 24px;
+}
+
+main {
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 8px 30px #0002;
+  margin: 8vh auto;
+  max-width: 480px;
+  padding: 28px;
+}
+
+h1 {
+  font-size: 1.55rem;
+  margin-top: 0;
+}
+
+p {
+  color: #52606d;
+  line-height: 1.5;
+}
+
+label {
+  display: block;
+  font-weight: 650;
+  margin: 18px 0 7px;
+}
+
+select,
+input,
+button {
+  border-radius: 8px;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 12px;
+  width: 100%;
+}
+
+select,
+input {
+  background: white;
+  border: 1px solid #bcccdc;
+}
+
+button {
+  background: #1261a0;
+  border: 0;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+  margin-top: 22px;
+}
+
+button:disabled {
+  background: #9fb3c8;
+  cursor: wait;
+}
+
+#status {
+  font-size: .92rem;
+  min-height: 1.4em;
+}
+
+/* Centraliza somente a pequena confirmação mostrada antes do reinício. */
+.message-card {
+  text-align: center;
+}
