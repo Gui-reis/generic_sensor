@@ -22,9 +22,14 @@ quando o portal de configuração está ativo.
 ## Estrutura
 
 - `src/main.cpp`: inicialização e orquestração dos componentes.
-- `include/NetworkManager.h` e `src/NetworkManager.cpp`: redes conhecidas,
-  Preferences/NVS, conexão, Access Point, DNS, montagem do LittleFS e rotas do
-  portal HTTP.
+- `include/NetworkManager.h` e `src/NetworkManager.cpp`: fachada que orquestra
+  a tentativa de conexão e ativa o portal quando nenhuma rede conhecida funciona.
+- `include/WifiCredentialStore.h` e `src/WifiCredentialStore.cpp`: leitura,
+  atualização e persistência das credenciais na NVS por meio de Preferences.
+- `include/WifiConnector.h` e `src/WifiConnector.cpp`: scan, priorização por RSSI
+  e tentativas de conexão às redes conhecidas.
+- `include/ConfigurationPortal.h` e `src/ConfigurationPortal.cpp`: Access Point,
+  DNS cativo, servidor HTTP, montagem do LittleFS e rotas de configuração.
 - `data/index.html` e `data/saved.html`: páginas exibidas durante a configuração.
 - `data/styles.css` e `data/script.js`: apresentação e comportamento do portal,
   mantidos separados do firmware e armazenados na partição LittleFS.
@@ -54,11 +59,13 @@ O firmware e o LittleFS ocupam partições diferentes da flash. Por isso,
 diretório `data/` for alterado, execute novamente o target `uploadfs`. Se apenas
 o código C++ mudar, basta enviar o firmware normalmente.
 
-Na inicialização, o firmware monta o LittleFS antes de tentar abrir o portal. Se
-a partição estiver nova ou inválida, ela pode ser formatada automaticamente;
-nesse caso os arquivos do portal precisam ser enviados novamente com
+Ao iniciar o portal de configuração, o firmware monta o LittleFS antes de
+aceitar requisições HTTP. Se a partição estiver nova ou inválida, ela pode ser
+formatada automaticamente; nesse caso os arquivos do portal precisam ser enviados
+novamente com
 `pio run --target uploadfs`.
 
 O pino de dados do DS18B20 permanece configurado como GPIO 4. Antes de usar o
 firmware em produção, altere `kAccessPointPassword` em
-`src/NetworkManager.cpp` para uma senha própria com pelo menos oito caracteres.
+`src/ConfigurationPortal.cpp` para uma senha própria com pelo menos oito
+caracteres.
