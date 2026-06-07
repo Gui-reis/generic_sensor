@@ -1,7 +1,8 @@
 # Sensor de temperatura ESP32
 
-Firmware PlatformIO para ESP32 que lê um sensor Dallas/DS18B20 e gerencia a
-conexão Wi-Fi sem exigir credenciais gravadas no código-fonte.
+Firmware PlatformIO para ESP32 que lê um sensor Dallas/DS18B20, gerencia a
+conexão Wi-Fi sem exigir credenciais gravadas no código-fonte e publica as
+leituras em um broker MQTT compatível com TLS, como o HiveMQ Cloud.
 
 ## Fluxo de inicialização
 
@@ -17,7 +18,8 @@ conexão Wi-Fi sem exigir credenciais gravadas no código-fonte.
 5. Depois de salvar, o ESP32 reinicia e tenta conectar novamente.
 
 A leitura do sensor continua sendo executada e impressa no monitor serial mesmo
-quando o portal de configuração está ativo.
+quando o portal de configuração está ativo. Quando há Wi-Fi e MQTT configurado,
+a temperatura também é publicada a cada cinco segundos.
 
 ## Estrutura
 
@@ -35,6 +37,41 @@ quando o portal de configuração está ativo.
   mantidos separados do firmware e armazenados na partição LittleFS.
 - `include/TemperatureSensor.h` e `src/TemperatureSensor.cpp`: encapsulamento do
   barramento OneWire e da biblioteca DallasTemperature.
+- `include/MqttPublisher.h` e `src/MqttPublisher.cpp`: conexão TLS, manutenção da
+  sessão MQTT, reconexão temporizada e publicação das temperaturas.
+- `include/MqttConfig.h`: valores padrão seguros e carregamento opcional das
+  credenciais locais definidas em `include/MqttSecrets.h`.
+- `include/MqttSecrets.example.h`: modelo versionado para configurar o HiveMQ sem
+  gravar usuário e senha reais no repositório.
+
+## Configurar o HiveMQ Cloud
+
+1. Crie um arquivo local a partir do modelo:
+
+   ```sh
+   cp include/MqttSecrets.example.h include/MqttSecrets.h
+   ```
+
+2. Edite `include/MqttSecrets.h` e informe o host, a porta, o usuário, a senha e
+   o tópico do cluster. O arquivo real está no `.gitignore` e não deve ser
+   commitado.
+3. Compile e envie o firmware normalmente. O client ID é gerado a partir do
+   identificador único do ESP32, no formato `esp32-sensor-...`.
+
+A mensagem publicada tem este formato:
+
+```json
+{"sensor":"esp32-sensor-AABBCCDDEEFF","temperatura_celsius":23.75}
+```
+
+As leituras continuam ocorrendo a cada segundo, mas as publicações são limitadas
+a uma a cada cinco segundos. Se a conexão cair, o firmware tenta restabelecer a
+sessão MQTT a cada cinco segundos, sem laços de espera ou `delay()`.
+
+> **Atenção:** esta primeira versão usa `WiFiClientSecure::setInsecure()` para
+> facilitar o teste, portanto não valida a identidade do broker. Antes de usar o
+> firmware em produção, configure o certificado raiz com `setCACert()` e
+> sincronize o relógio do ESP32.
 
 ## Compilar e enviar
 

@@ -1,16 +1,20 @@
 #include <Arduino.h>
 #include <DallasTemperature.h>
 
+#include "MqttPublisher.h"
 #include "NetworkManager.h"
 #include "TemperatureSensor.h"
 
 namespace {
 constexpr uint8_t kOneWireBusPin = 4;
 constexpr uint32_t kTemperatureReadIntervalMs = 1000;
+constexpr uint32_t kTemperaturePublishIntervalMs = 5000;
 
+MqttPublisher mqttPublisher;
 NetworkManager networkManager;
 TemperatureSensor temperatureSensor(kOneWireBusPin);
 uint32_t lastTemperatureReadAt = 0;
+uint32_t lastTemperaturePublishAt = 0;
 
 void printTemperature() {
   const float temperatureCelsius = temperatureSensor.readCelsius();
@@ -25,6 +29,13 @@ void printTemperature() {
   Serial.print("Temperatura: ");
   Serial.print(temperatureCelsius);
   Serial.println(" °C");
+
+  const uint32_t now = millis();
+  if (now - lastTemperaturePublishAt >= kTemperaturePublishIntervalMs) {
+    if (mqttPublisher.publishTemperature(temperatureCelsius)) {
+      lastTemperaturePublishAt = now;
+    }
+  }
 }
 } // namespace
 
@@ -32,15 +43,18 @@ void setup() {
   Serial.begin(115200);
   temperatureSensor.begin();
   networkManager.begin();
+  mqttPublisher.begin();
 
   // Força uma primeira leitura logo após a inicialização, sem esperar um ciclo.
   lastTemperatureReadAt = millis() - kTemperatureReadIntervalMs;
+  lastTemperaturePublishAt = millis() - kTemperaturePublishIntervalMs;
 }
 
 void loop() {
   // O portal precisa ser processado continuamente, inclusive enquanto o sensor
   // está funcionando sem conexão com uma rede externa.
   networkManager.loop();
+  mqttPublisher.loop();
 
   // O controle por millis(), ao contrário de delay(1000), não bloqueia o
   // servidor HTTP e mantém a página de configuração responsiva durante as
