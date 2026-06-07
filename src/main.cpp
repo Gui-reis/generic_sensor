@@ -1,47 +1,53 @@
 #include <Arduino.h>
-#include <OneWire.h>
 #include <DallasTemperature.h>
-#include <WiFi.h>
 
-#define ONE_WIRE_BUS 4
+#include "NetworkManager.h"
+#include "TemperatureSensor.h"
 
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
+namespace {
+constexpr uint8_t kOneWireBusPin = 4;
+constexpr uint32_t kTemperatureReadIntervalMs = 1000;
 
-const char* ssid = "NOME_DA_SUA_REDE";
-const char* password = "SENHA_DA_SUA_REDE";
+NetworkManager networkManager;
+TemperatureSensor temperatureSensor(kOneWireBusPin);
+uint32_t lastTemperatureReadAt = 0;
 
+void printTemperature() {
+  const float temperatureCelsius = temperatureSensor.readCelsius();
 
-void setup() {
-  Serial.begin(9600);
-  sensors.begin();
-
-
-  WiFi.begin(ssid, password);
-
-  Serial.print("Conectando ao Wi-Fi");
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  // DEVICE_DISCONNECTED_C é o valor especial retornado pela biblioteca quando
+  // nenhum sensor responde. Não o mostramos como se fosse uma temperatura real.
+  if (temperatureCelsius == DEVICE_DISCONNECTED_C) {
+    Serial.println("Não foi possível ler o sensor de temperatura.");
+    return;
   }
 
-  Serial.println();
-  Serial.println("Wi-Fi conectado!");
-  Serial.print("IP do ESP32: ");
-  Serial.println(WiFi.localIP());
+  Serial.print("Temperatura: ");
+  Serial.print(temperatureCelsius);
+  Serial.println(" °C");
+}
+} // namespace
 
+void setup() {
+  Serial.begin(115200);
+  temperatureSensor.begin();
+  networkManager.begin();
+
+  // Força uma primeira leitura logo após a inicialização, sem esperar um ciclo.
+  lastTemperatureReadAt = millis() - kTemperatureReadIntervalMs;
 }
 
 void loop() {
-  sensors.requestTemperatures();
+  // O portal precisa ser processado continuamente, inclusive enquanto o sensor
+  // está funcionando sem conexão com uma rede externa.
+  networkManager.loop();
 
-  float tempC = sensors.getTempCByIndex(0);
-
-  Serial.print("Temperatura: ");
-  Serial.print(tempC);
-  Serial.println(" °C");
-
-  delay(1000);
+  // O controle por millis(), ao contrário de delay(1000), não bloqueia o
+  // servidor HTTP e mantém a página de configuração responsiva durante as
+  // medições.
+  const uint32_t now = millis();
+  if (now - lastTemperatureReadAt >= kTemperatureReadIntervalMs) {
+    lastTemperatureReadAt = now;
+    printTemperature();
+  }
 }
-
