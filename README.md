@@ -23,7 +23,11 @@ quando o portal de configuração está ativo.
 
 - `src/main.cpp`: inicialização e orquestração dos componentes.
 - `include/NetworkManager.h` e `src/NetworkManager.cpp`: redes conhecidas,
-  Preferences/NVS, conexão, Access Point, DNS e portal HTTP.
+  Preferences/NVS, conexão, Access Point, DNS, montagem do LittleFS e rotas do
+  portal HTTP.
+- `data/index.html` e `data/saved.html`: páginas exibidas durante a configuração.
+- `data/styles.css` e `data/script.js`: apresentação e comportamento do portal,
+  mantidos separados do firmware e armazenados na partição LittleFS.
 - `include/TemperatureSensor.h` e `src/TemperatureSensor.cpp`: encapsulamento do
   barramento OneWire e da biblioteca DallasTemperature.
 
@@ -32,10 +36,28 @@ quando o portal de configuração está ativo.
 Com o PlatformIO instalado:
 
 ```sh
+# Compila o firmware.
 pio run
+
+# Envia os arquivos de data/ para a partição LittleFS do ESP32.
+pio run --target uploadfs
+
+# Envia o firmware para a partição de aplicação.
 pio run --target upload
+
+# Abre o monitor serial.
 pio device monitor --baud 115200
 ```
+
+O firmware e o LittleFS ocupam partições diferentes da flash. Por isso,
+`upload` não substitui `uploadfs`: sempre que algum HTML, CSS ou JavaScript do
+diretório `data/` for alterado, execute novamente o target `uploadfs`. Se apenas
+o código C++ mudar, basta enviar o firmware normalmente.
+
+Na inicialização, o firmware monta o LittleFS antes de tentar abrir o portal. Se
+a partição estiver nova ou inválida, ela pode ser formatada automaticamente;
+nesse caso os arquivos do portal precisam ser enviados novamente com
+`pio run --target uploadfs`.
 
 O pino de dados do DS18B20 permanece configurado como GPIO 4. Antes de usar o
 firmware em produção, altere `kAccessPointPassword` em
