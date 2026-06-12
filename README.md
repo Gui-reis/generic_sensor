@@ -18,8 +18,9 @@ leituras em um broker MQTT compatível com TLS, como o HiveMQ Cloud.
 5. Depois de salvar, o ESP32 reinicia e tenta conectar novamente.
 
 A leitura do sensor continua sendo executada e impressa no monitor serial mesmo
-quando o portal de configuração está ativo. Quando há Wi-Fi e MQTT configurado,
-a temperatura também é publicada a cada cinco segundos.
+quando o portal de configuração está ativo. Quando há Wi-Fi, horário UTC
+sincronizado e MQTT configurado, a temperatura também é publicada a cada cinco
+segundos.
 
 ## Estrutura
 
@@ -39,6 +40,8 @@ a temperatura também é publicada a cada cinco segundos.
   barramento OneWire e da biblioteca DallasTemperature.
 - `include/MqttPublisher.h` e `src/MqttPublisher.cpp`: conexão TLS, manutenção da
   sessão MQTT, reconexão temporizada e publicação das temperaturas.
+- `include/UtcClock.h` e `src/UtcClock.cpp`: sincronização do relógio via NTP e
+  formatação do horário UTC no padrão ISO 8601.
 - `include/MqttConfig.h`: valores padrão seguros e carregamento opcional das
   credenciais locais definidas em `include/MqttSecrets.h`.
 - `include/MqttSecrets.example.h`: modelo versionado para configurar o HiveMQ sem
@@ -61,8 +64,12 @@ a temperatura também é publicada a cada cinco segundos.
 A mensagem publicada tem este formato:
 
 ```json
-{"sensor":"esp32-sensor-AABBCCDDEEFF","temperatura_celsius":23.75}
+{"value":23.75,"timestamp":"2026-06-12T18:30:00Z"}
 ```
+
+O campo `timestamp` usa o padrão ISO 8601 e o sufixo `Z` indica que o horário
+está em UTC. O firmware configura a sincronização NTP sem bloquear o loop e adia
+a publicação até receber uma data válida.
 
 As leituras continuam ocorrendo a cada segundo, mas as publicações são limitadas
 a uma a cada cinco segundos. Se a conexão cair, o firmware tenta restabelecer a
@@ -70,8 +77,7 @@ sessão MQTT a cada cinco segundos, sem laços de espera ou `delay()`.
 
 > **Atenção:** esta primeira versão usa `WiFiClientSecure::setInsecure()` para
 > facilitar o teste, portanto não valida a identidade do broker. Antes de usar o
-> firmware em produção, configure o certificado raiz com `setCACert()` e
-> sincronize o relógio do ESP32.
+> firmware em produção, configure o certificado raiz com `setCACert()`.
 
 ## Compilar e enviar
 

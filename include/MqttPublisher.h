@@ -46,11 +46,11 @@ public:
   ////////////////////////////////
 
   /**
-   * Monta um JSON com a identificação do ESP32 e a temperatura recebida, então
-   * publica no tópico configurado. Retorna false se MQTT não estiver conectado,
-   * se o payload não couber no buffer ou se o broker rejeitar a publicação.
+   * Monta um JSON com a temperatura e o instante UTC recebidos, então publica
+   * no tópico configurado. Retorna false se MQTT não estiver conectado, se o
+   * payload não couber no buffer ou se o broker rejeitar a publicação.
    */
-  bool publishTemperature(float temperatureCelsius);
+  bool publishTemperature(float temperatureCelsius, const char *utcTimestamp);
 
   ////////////////////////////////
 

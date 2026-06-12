@@ -4,6 +4,7 @@
 #include "MqttPublisher.h"
 #include "NetworkManager.h"
 #include "TemperatureSensor.h"
+#include "UtcClock.h"
 
 namespace {
 constexpr uint8_t kOneWireBusPin = 4;
@@ -13,6 +14,7 @@ constexpr uint32_t kTemperaturePublishIntervalMs = 5000;
 MqttPublisher mqttPublisher;
 NetworkManager networkManager;
 TemperatureSensor temperatureSensor(kOneWireBusPin);
+UtcClock utcClock;
 uint32_t lastTemperatureReadAt = 0;
 uint32_t lastTemperaturePublishAt = 0;
 
@@ -31,8 +33,22 @@ void printTemperature() {
   Serial.println(" °C");
 
   const uint32_t now = millis();
-  if (now - lastTemperaturePublishAt >= kTemperaturePublishIntervalMs) {
-    if (mqttPublisher.publishTemperature(temperatureCelsius)) {
+  if (now - lastTemperaturePublishAt >= kTemperaturePublishIntervalMs &&
+      mqttPublisher.isConnected()) {
+    /*
+     * Reserva um buffer com o tamanho exato documentado pelo relógio. A leitura
+     * local continua funcionando enquanto o NTP sincroniza, mas nenhuma mensagem
+     * incompleta ou com a data inicial de 1970 é enviada ao broker.
+     */
+    char utcTimestamp[UtcClock::kTimestampBufferSize];
+    if (!utcClock.formatCurrentTimestamp(utcTimestamp,
+                                         sizeof(utcTimestamp))) {
+      Serial.println(
+          "Horário UTC ainda indisponível; publicação MQTT adiada.");
+      return;
+    }
+
+    if (mqttPublisher.publishTemperature(temperatureCelsius, utcTimestamp)) {
       lastTemperaturePublishAt = now;
     }
   }
@@ -43,6 +59,7 @@ void setup() {
   Serial.begin(115200);
   temperatureSensor.begin();
   networkManager.begin();
+  utcClock.begin();
   mqttPublisher.begin();
 
   // Força uma primeira leitura logo após a inicialização, sem esperar um ciclo.
