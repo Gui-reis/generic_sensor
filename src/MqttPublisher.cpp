@@ -121,7 +121,8 @@ void MqttPublisher::loop() {
 
 ////////////////////////////////
 
-bool MqttPublisher::publishTemperature(float temperatureCelsius) {
+bool MqttPublisher::publishTemperature(float temperatureCelsius,
+                                       const char *utcTimestamp) {
   /*
    * Publicar só é possível depois de begin() habilitar o componente e loop()
    * estabelecer uma sessão. A leitura continua sendo impressa normalmente se o
@@ -133,15 +134,24 @@ bool MqttPublisher::publishTemperature(float temperatureCelsius) {
   }
 
   /*
+   * O timestamp é produzido pelo UtcClock somente depois da sincronização NTP.
+   * Mesmo assim, valida o ponteiro na fronteira da classe para nunca repassá-lo
+   * de forma inválida à função de formatação da biblioteca C.
+   */
+  if (utcTimestamp == nullptr) {
+    Serial.println("Não foi possível montar o payload sem um timestamp UTC.");
+    return false;
+  }
+
+  /*
    * Usa um buffer fixo em vez de várias concatenações com String. Isso deixa o
    * consumo de memória previsível e evita fragmentação do heap durante a
    * operação contínua do ESP32.
    */
   char payload[kPayloadSize];
   const int written = snprintf(
-      payload, sizeof(payload),
-      "{\"sensor\":\"%s\",\"temperatura_celsius\":%.2f}", clientId_,
-      temperatureCelsius);
+      payload, sizeof(payload), "{\"value\":%.2f,\"timestamp\":\"%s\"}",
+      temperatureCelsius, utcTimestamp);
 
   /*
    * snprintf retorna um valor negativo em caso de erro ou o tamanho necessário
